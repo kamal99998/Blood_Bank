@@ -61,6 +61,24 @@ const User = {
         ];
 
         db.query(sql, values, callback);
+    },
+
+    getAll: (callback) => {
+        const sql = `
+            SELECT *
+            FROM users
+        `;
+
+        db.query(sql, callback);
+    },
+
+    delete: (userId, callback) => {
+        const sql = `
+            DELETE FROM users
+            WHERE user_id = ?
+        `;
+
+        db.query(sql, [userId], callback);
     }
 };
 

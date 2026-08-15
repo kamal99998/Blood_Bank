@@ -138,3 +138,19 @@ CREATE TABLE request_responses (
         ON DELETE CASCADE
         ON UPDATE CASCADE
 );
+
+-- =========================================
+-- SEED DATA
+-- =========================================
+
+INSERT INTO users (name, email, password, phone, address, date_of_birth, is_interested) VALUES
+('Admin User', 'admin@bloodbank.com', 'hashed_pw_1', '1234567890', '123 Admin St', '1990-01-01', TRUE),
+('John Doe', 'john@example.com', 'hashed_pw_2', '0987654321', '456 Main St', '1985-05-15', TRUE),
+('Jane Smith', 'jane@example.com', 'hashed_pw_3', '1112223333', '789 Oak Ave', '1992-10-20', FALSE);
+
+INSERT INTO donors (user_id, blood_group, is_available, last_donation_date) VALUES
+(1, 'O+', TRUE, '2023-01-10'),
+(2, 'A-', FALSE, '2023-11-01');
+
+INSERT INTO blood_requests (requester_id, donor_id, blood_group, hospital_name, hospital_address, required_date, units_required, reason, status) VALUES
+(3, 1, 'O+', 'City Hospital', '101 Health Blvd', '2023-12-01', 2, 'Surgery', 'Pending');
