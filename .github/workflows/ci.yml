@@ -1,53 +1,36 @@
-```yaml
-name: CI (Build & Test)
+name: CI - Build and Test
 
 on:
   push:
-    branches: ["dev", "main"]
+    branches:
+      - dev
+      - main
 
   pull_request:
-    branches: ["dev", "main"]
+    branches:
+      - dev
+      - main
 
 jobs:
-
-  # ==========================================
-  # BUILD
-  # ==========================================
-  build:
-    name: Build Application
-    runs-on: ubuntu-latest
-
-    steps:
-
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Validate Docker Compose
-        run: docker compose config
-
-      - name: Build Docker Environment
-        run: docker compose build
-
-
-  # ==========================================
-  # TEST
-  # ==========================================
   test:
-    name: Test Application
-    needs: build
+    name: Test Blood Bank Application
     runs-on: ubuntu-latest
 
-    steps:
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: blood_bank
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
+    steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -55,57 +38,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
+          cache: npm
 
       - name: Install Dependencies
         run: npm ci
 
-      # ======================================
-      # Start MySQL
-      # ======================================
-      - name: Start MySQL Container
-        run: |
-          docker compose up -d db
-
-      # ======================================
-      # Wait for MySQL
-      # ======================================
-      - name: Wait for MySQL
-        run: |
-          echo "Waiting for MySQL..."
-
-          for i in {1..30}; do
-            if docker exec mysql-db \
-              mysqladmin ping \
-              -h 127.0.0.1 \
-              -uroot \
-              -proot \
-              --silent; then
-
-              echo "MySQL is ready!"
-              break
-            fi
-
-            echo "MySQL is not ready yet..."
-            sleep 2
-          done
-
-      # ======================================
-      # Run Jest Tests
-      # ======================================
-      - name: Run Jest Tests
+      - name: Run Tests
         env:
-          DB_HOST: "127.0.0.1"
-          DB_PORT: "3306"
-          DB_USER: "root"
-          DB_PASSWORD: "root"
-          DB_NAME: "blood_bank"
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: blood_bank
         run: npm test
-
-      # ======================================
-      # Cleanup
-      # ======================================
-      - name: Stop Docker
-        if: always()
-        run: docker compose down -v
-```

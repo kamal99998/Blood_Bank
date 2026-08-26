@@ -1,158 +1,69 @@
-```yaml
-name: CD (Deploy to VPS)
+name: CD - Deploy Blood Bank
 
 on:
   push:
-    branches: ["dev"]
+    branches:
+      - dev
 
 jobs:
-
   deploy:
-    name: Deploy Blood Bank
+    name: Deploy to Server
     runs-on: ubuntu-latest
 
     steps:
-
-      # ==========================================
-      # Deploy through SSH
-      # ==========================================
-      - name: Deploy to VPS via SSH
+      - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5
-
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT }}
-
           script: |
-
             set -e
 
-            echo "======================================"
-            echo "Starting Blood Bank Deployment"
-            echo "======================================"
-
-            # ------------------------------------
-            # Application directory
-            # ------------------------------------
-
             APP_DIR="/root/blood_bank"
+            REPO_URL="https://github.com/kamal99998/Blood_Bank.git"
+            BRANCH="dev"
 
-            # ------------------------------------
-            # Clone repository if it doesn't exist
-            # ------------------------------------
+            echo "Starting deployment..."
 
             if [ ! -d "$APP_DIR/.git" ]; then
-
-              echo "Application directory not found."
               echo "Cloning repository..."
-
-              git clone \
-                -b dev \
-                https://github.com/kamal99998/Blood_Bank.git \
-                "$APP_DIR"
-
+              git clone -b "$BRANCH" "$REPO_URL" "$APP_DIR"
             fi
 
             cd "$APP_DIR"
 
-            # ------------------------------------
-            # Get latest code
-            # ------------------------------------
+            echo "Getting latest code..."
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git reset --hard "origin/$BRANCH"
 
-            echo "Fetching latest code..."
+            echo "Creating .env file..."
 
-            git fetch origin dev
-
-            git checkout dev
-
-            git reset --hard origin/dev
-
-            # ------------------------------------
-            # Create .env
-            # ------------------------------------
-
-            echo "Creating environment file..."
-
-            cat <<EOF > .env
-
+            cat > .env <<EOF
 DB_HOST=${{ secrets.DB_HOST }}
 DB_PORT=${{ secrets.DB_PORT }}
 DB_USER=${{ secrets.DB_USER }}
 DB_PASSWORD=${{ secrets.DB_PASSWORD }}
 DB_NAME=${{ secrets.DB_NAME }}
-
 PORT=${{ secrets.APP_PORT }}
-
 EOF
 
-            # ------------------------------------
-            # Install dependencies
-            # ------------------------------------
-
             echo "Installing dependencies..."
+            npm ci
 
-            npm ci --omit=dev
-
-            # ------------------------------------
-            # Start / restart MySQL
-            # ------------------------------------
-
-            echo "Starting MySQL..."
-
+            echo "Starting Docker services..."
             docker compose up -d db
 
-            # ------------------------------------
-            # Wait for MySQL
-            # ------------------------------------
+            echo "Restarting application..."
 
-            echo "Waiting for MySQL..."
-
-            for i in {1..30}; do
-
-              if docker exec mysql-db \
-                mysqladmin ping \
-                -h 127.0.0.1 \
-                -uroot \
-                -proot \
-                --silent; then
-
-                echo "MySQL is ready!"
-                break
-
-              fi
-
-              echo "Waiting for MySQL..."
-              sleep 2
-
-            done
-
-            # ------------------------------------
-            # Restart application with PM2
-            # ------------------------------------
-
-            echo "Restarting Blood Bank application..."
-
-            if pm2 list | grep -q "blood-bank"; then
-
+            if pm2 describe blood-bank > /dev/null 2>&1; then
               pm2 restart blood-bank
-
             else
-
               pm2 start app.js --name blood-bank
-
             fi
 
             pm2 save
 
-            # ------------------------------------
-            # Cleanup unused Docker images
-            # ------------------------------------
-
-            docker image prune -f
-
-            echo "======================================"
-            echo "Blood Bank Deployment Successful!"
-            echo "======================================"
-```
+            echo "Deployment completed successfully!"
