@@ -1,4 +1,4 @@
-name: CD - Deploy Blood Bank
+name: CD (Deploy to VPS)
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Server
+    name: Deploy Blood Bank
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Server via SSH
+      - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -21,11 +21,11 @@ jobs:
           script: |
             set -e
 
+            echo "Starting Blood Bank Deployment"
+
             APP_DIR="/root/blood_bank"
             REPO_URL="https://github.com/kamal99998/Blood_Bank.git"
             BRANCH="dev"
-
-            echo "Starting deployment..."
 
             if [ ! -d "$APP_DIR/.git" ]; then
               echo "Cloning repository..."
@@ -39,22 +39,22 @@ jobs:
             git checkout "$BRANCH"
             git reset --hard "origin/$BRANCH"
 
-            echo "Creating .env file..."
-
-            cat > .env <<EOF
-DB_HOST=${{ secrets.DB_HOST }}
-DB_PORT=${{ secrets.DB_PORT }}
-DB_USER=${{ secrets.DB_USER }}
-DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-DB_NAME=${{ secrets.DB_NAME }}
-PORT=${{ secrets.APP_PORT }}
-EOF
-
             echo "Installing dependencies..."
-            npm ci
+            npm ci --omit=dev
 
-            echo "Starting Docker services..."
+            echo "Starting MySQL..."
             docker compose up -d db
+
+            echo "Waiting for MySQL..."
+            for i in {1..30}; do
+              if docker compose exec -T db mysqladmin ping -h localhost -uroot -proot --silent; then
+                echo "MySQL is ready!"
+                break
+              fi
+
+              echo "Waiting for MySQL..."
+              sleep 2
+            done
 
             echo "Restarting application..."
 
@@ -66,4 +66,6 @@ EOF
 
             pm2 save
 
-            echo "Deployment completed successfully!"
+            docker image prune -f
+
+            echo "Deployment Successful!"

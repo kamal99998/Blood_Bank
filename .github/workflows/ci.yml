@@ -1,4 +1,4 @@
-name: CI - Build and Test
+name: CI (Build & Test)
 
 on:
   push:
@@ -12,23 +12,9 @@ on:
       - main
 
 jobs:
-  test:
-    name: Test Blood Bank Application
+  build:
+    name: Build Application
     runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: blood_bank
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
 
     steps:
       - name: Checkout Code
@@ -38,16 +24,64 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          cache: "npm"
 
       - name: Install Dependencies
         run: npm ci
 
+      - name: Validate Docker Compose
+        run: docker compose config
+
+      - name: Build Docker Environment
+        run: docker compose build
+
+  test:
+    name: Test Application
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Start MySQL Container
+        run: docker compose up -d db
+
+      - name: Wait for MySQL
+        run: |
+          echo "Waiting for MySQL..."
+
+          for i in {1..30}; do
+            if docker compose exec -T db mysqladmin ping -h localhost -uroot -proot --silent; then
+              echo "MySQL is ready!"
+              exit 0
+            fi
+
+            echo "MySQL is not ready yet..."
+            sleep 2
+          done
+
+          echo "MySQL failed to start."
+          exit 1
+
       - name: Run Tests
         env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: blood_bank
+          DB_HOST: "127.0.0.1"
+          DB_PORT: "3306"
+          DB_USER: "root"
+          DB_PASSWORD: "root"
+          DB_NAME: "blood_bank"
         run: npm test
+
+      - name: Stop Docker Stack
+        if: always()
+        run: docker compose down -v
