@@ -1,13 +1,22 @@
-name: CI/CD Pipeline
+```yaml
+name: Blood Bank CI/CD
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - dev
+
   pull_request:
-    branches: [ "main", "master" ]
+    branches:
+      - dev
 
 jobs:
+
+  # ==========================================
+  # CI - TEST
+  # ==========================================
   test:
+    name: Test Application
     runs-on: ubuntu-latest
 
     services:
@@ -19,35 +28,46 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=3
+          --health-retries=10
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
 
-      - name: Use Node.js
-        uses: actions/setup-node@v3
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
-          cache: 'npm'
+          node-version: '22'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Wait for MySQL to be ready
+      - name: Wait for MySQL
         run: |
-          while ! mysqladmin ping -h 127.0.0.1 -u root --password=root --silent; do
-            echo "Waiting for database connection..."
+          until mysqladmin ping \
+            -h 127.0.0.1 \
+            -u root \
+            -proot \
+            --silent
+          do
+            echo "Waiting for MySQL..."
             sleep 2
           done
 
-      - name: Initialize Database Schema
-        run: mysql -h 127.0.0.1 -u root -proot blood_bank < database/schema.sql
+      - name: Initialize database
+        run: |
+          mysql \
+            -h 127.0.0.1 \
+            -u root \
+            -proot \
+            blood_bank < database/schema.sql
 
-      - name: Run Tests
+      - name: Run tests
         run: npm test
         env:
           DB_HOST: 127.0.0.1
@@ -56,10 +76,62 @@ jobs:
           DB_NAME: blood_bank
           DB_PORT: 3306
 
-  docker-build:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
       - name: Validate Docker Compose
         run: docker compose config
+
+
+  # ==========================================
+  # CD - DEPLOY TO VPS
+  # ==========================================
+  deploy:
+    name: Deploy to VPS
+    needs: test
+
+    # Deployment happens only after push to dev.
+    # Pull requests will run CI but will NOT deploy.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Deploy application to VPS
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            set -e
+
+            echo "================================"
+            echo "Starting Blood Bank deployment"
+            echo "================================"
+
+            cd /root/blood_bank
+
+            echo "Pulling latest code..."
+            git fetch origin
+            git checkout dev
+            git reset --hard origin/dev
+
+            echo "Installing dependencies..."
+            npm ci --omit=dev
+
+            echo "Restarting application..."
+
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 restart blood-bank || pm2 start app.js --name blood-bank
+              pm2 save
+            else
+              echo "PM2 is not installed."
+              echo "Please install PM2 on the VPS:"
+              echo "npm install -g pm2"
+              exit 1
+            fi
+
+            echo "================================"
+            echo "Deployment completed successfully"
+            echo "================================"
+```
